@@ -1,11 +1,10 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
-	"version": "1.1.0-alpha.0",
+	"id": "obsidian-modified-file-list-property",
+	"name": "YAML Metadata: Add Last Modified Property",
+	"version": "0.0.0-alpha.0",
 	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
-	"isDesktopOnly": false
+	"description": "Adds date/time stamp to notes YAML front mapper's 'last-modified' property after any modification is made. Allows for tracking of multiple days/times of modifications.",
+	"author": "James Sonneveld",
+	"authorUrl": "https://github.com/JimJamBimBam",
+	"isDesktopOnly": true
 }
