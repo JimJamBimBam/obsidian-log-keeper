@@ -1,15 +1,28 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, MetadataCache, MarkdownFileInfo, TFile, FrontMatterCache } from 'obsidian'
 
+// Minimum update interval is required to prevent spamming of modification values to the YAML property.
+const MIN_UPDATE_INTERVAL: number = 60
+// Maximum update interval is the number of seconds in a day.
+// At that point, setting the 'oneModificationPerDay' boolean would be more beneficial
+const MAX_UPDATE_INTERVAL: number = 84600
+
 // Remember to rename these classes and interfaces!
 
+// The 'class/file' of what the settings for the plugin cotain.
 interface ModifiedFileListSettings {
-	mySetting: string
-	mySecondSetting: string
+	// Boolean to disable/enable per day additions to the 'last modified' property.
+	// If enabled, the most recent changes will be used as the last modified for that day.
+	oneModificationPerDay: boolean
+	// The interval, in seconds, when a new date time value is added to the 'last modified' property.
+	// When 'oneModificationPerDay' is set to false, new values will be added everytime there is 
+	// a difference in the note AND the time between modifications exceeds or is equal to the updateInterval. 
+	updateInterval: number
 }
 
+// Default settings for the plugin
 const DEFAULT_SETTINGS: ModifiedFileListSettings = {
-	mySetting: 'default',
-	mySecondSetting: 'default'
+	oneModificationPerDay: true,
+	updateInterval: 2
 }
 
 export default class ModifiedFileListPlugin extends Plugin {
@@ -17,62 +30,12 @@ export default class ModifiedFileListPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings()
-
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!')
-		})
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class')
-
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem()
-		statusBarItemEl.setText('Status Bar Text')
-
 		// Command added for debugging purposes and to test various Obsidian functions.
 		this.addCommand({
 			id: 'debug-print-metadata',
 			name: 'DEBUG: Print Metadata',
 			editorCallback: (e, view) => {
-				new MetadataPrintModal(this.app, view).open()
-			}
-		})
-
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new ModifiedFileListModal(this.app).open()
-			}
-		})
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection())
-				editor.replaceSelection('Sample Editor Command')
-			}
-		})
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView)
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new ModifiedFileListModal(this.app).open()
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true
-				}
+				new MetadataPrintModal(this.app, view, this.settings).open()
 			}
 		})
 
@@ -106,10 +69,12 @@ class MetadataPrintModal extends Modal {
 	metadata: MetadataCache
 	_test_metadata?: FrontMatterCache
 	view: MarkdownView | MarkdownFileInfo
+	settings: ModifiedFileListSettings
 	
-	constructor(app: App, view: MarkdownView | MarkdownFileInfo) {
+	constructor(app: App, view: MarkdownView | MarkdownFileInfo, settings: ModifiedFileListSettings) {
 		super(app)
 		this.view = view
+		this.settings = settings
 
 		if (app.metadataCache.getFileCache(view.file as TFile)) {
 			this._test_metadata = app.metadataCache.getFileCache(view.file as TFile)?.frontmatter
@@ -118,11 +83,12 @@ class MetadataPrintModal extends Modal {
 
 	onOpen(): void {
 		const {contentEl} = this
-		for(var property in this._test_metadata) {
-			let prop = property
-			let text = `${prop}: ${this._test_metadata[property]}\n`
+		for(const property in this._test_metadata) {
+			const text = `${property}: ${this._test_metadata[property]}\n`
 			contentEl.createEl('div', {text: text})
 		}
+		contentEl.createEl('div', {text: String(this.settings.oneModificationPerDay)})
+		contentEl.createEl('div', {text: String(this.settings.updateInterval)})
 	}
 
 	onClose(): void {
@@ -163,28 +129,47 @@ class ModifiedFileListTab extends PluginSettingTab {
 		// The 'root' element of the settings tab.
 		containerEl.empty()
 
-		// The first setting.
+		// This setting deals with the boolean that controls if modifications should be added one per day or
+		// shoudld be added multiple times a day (dependent on the update interval setting.) 
 		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value
+			.setName("Toggle One Modification Per Day")
+			.setDesc(`
+				Toggle between tracking modifications made to notes per day or by the interval set by Update Interval.
+				The most recent modification on the day will be used for that day.
+				Setting this to true will also disable Update Interval.
+				`)
+			.addToggle((toggle) => {
+				toggle.setTooltip('Toggle between one tracking per day modifications or not.')
+				toggle.setValue(this.plugin.settings.oneModificationPerDay)
+				toggle.onChange(async (value) => {
+					this.plugin.settings.oneModificationPerDay = value
 					await this.plugin.saveSettings()
-				}))
+				})
+			})
 		
-		// The second setting.
+		// The setting that deals with the interval between the last modification property being added and the new one to be added.
 		new Setting(containerEl)
-				.setName('Setting #2')
-				.setDesc('It\'s another secret')
-				.addText(text => text
-					.setPlaceholder('Enter another secret')
-					.setValue(this.plugin.settings.mySecondSetting)
-					.onChange(async (value) => {
-						this.plugin.settings.mySecondSetting = value
+				.setName('Update Interval (In Seconds)')
+				.setDesc(`The amount of time between the last modification and the most recent modification before a new value is added
+					to the 'last-modified' list property.
+					A high update interval should be set otherwise, any single chagne will result in the addition of a new property value.`)
+				.addText((textfield) => {
+					textfield.setPlaceholder("E.g. '10'")
+					// Anything that is not a valid number is returned as NaN (Not a Number)
+					// This is checked for and the min is given back instead.
+					// Allows for simple check when trying to change the updateInterval
+					textfield.inputEl.inputMode = "numeric"
+					textfield.setValue(String(this.plugin.settings.updateInterval))
+					textfield.onChange(async (value) => {
+						if (isNaN(Number(value)) || Number(value) < MIN_UPDATE_INTERVAL)
+							this.plugin.settings.updateInterval = MIN_UPDATE_INTERVAL
+						else if (Number(value) > MAX_UPDATE_INTERVAL)
+							this.plugin.settings.updateInterval = MAX_UPDATE_INTERVAL
+						else
+							this.plugin.settings.updateInterval = Number(value)
+
 						await this.plugin.saveSettings()
-					}))
+					})
+				})
 	}
 }
