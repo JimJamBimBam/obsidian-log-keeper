@@ -47,19 +47,9 @@ export default class ModifiedFileListPlugin extends Plugin {
 		await this.saveData(this.settings)
 	}
 
-	/*
+	/** 
 	Will attempt to update the 'last-modified' property of the frontmatter of the given file.
-	It will attempt this by:
-	- Either adding a new value to 'last-modified' property. Or,
-	- If 'oneModificationPerDay' is true, updating any 'last-modified' property that was made on the same day to the most recent time.
-	The steps for this are as follows:
-	- Grab the most recent modification date from the YAML property (either last entry in 'modified-history' property, or from 'last-modified' property).
-	- Grab the current moment() (Is the date/time currently).
-	- Compare the diff() of the two moments. If the moment is greater than, 'updateInterval':
-		- If 'oneModificationPerDay' == true:
-			- update the 'modified-history' that is a part of the same or,
-		- Else
-			- Add a new entry to the 'modified-history' property.
+	@param {TFile} file - The file that is having it's frontmatter updated. 
 	*/
 	updateFrontmatter(file: TFile): void {
 		// moment() will return the current time to use later.
