@@ -1,35 +1,20 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, MetadataCache, MarkdownFileInfo, TFile, FrontMatterCache } from 'obsidian'
-
-// Minimum update interval is required to prevent spamming of modification values to the YAML property.
-const MIN_UPDATE_INTERVAL: number = 60
-// Maximum update interval is the number of seconds in a day.
-// At that point, setting the 'oneModificationPerDay' boolean would be more beneficial
-const MAX_UPDATE_INTERVAL: number = 84600
-
-// Remember to rename these classes and interfaces!
-
-// The 'class/file' of what the settings for the plugin cotain.
-interface ModifiedFileListSettings {
-	// Boolean to disable/enable per day additions to the 'last modified' property.
-	// If enabled, the most recent changes will be used as the last modified for that day.
-	oneModificationPerDay: boolean
-	// The interval, in seconds, when a new date time value is added to the 'last modified' property.
-	// When 'oneModificationPerDay' is set to false, new values will be added everytime there is 
-	// a difference in the note AND the time between modifications exceeds or is equal to the updateInterval. 
-	updateInterval: number
-}
-
-// Default settings for the plugin
-const DEFAULT_SETTINGS: ModifiedFileListSettings = {
-	oneModificationPerDay: true,
-	updateInterval: 2
-}
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, MetadataCache, MarkdownFileInfo, TFile, FrontMatterCache, moment, CachedMetadata } from 'obsidian'
+import { ModifiedFileListTab, DEFAULT_SETTINGS, ModifiedFileListSettings } from 'src/settings'
+import { Moment } from 'moment'
 
 export default class ModifiedFileListPlugin extends Plugin {
 	settings: ModifiedFileListSettings
 
 	async onload() {
+		// Logging debugging information on load.
+		console.log(`Activating: ${this.manifest.name}\n
+			 Version: ${this.manifest.version}
+			 Author: ${this.manifest.author}
+			 Author URL: ${this.manifest.authorUrl}`
+			)
+		
 		await this.loadSettings()
+		
 		// Command added for debugging purposes and to test various Obsidian functions.
 		this.addCommand({
 			id: 'debug-print-metadata',
@@ -42,14 +27,12 @@ export default class ModifiedFileListPlugin extends Plugin {
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new ModifiedFileListTab(this.app, this))
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt)
-		})
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000))
+		// This event is called when text is changed in a note.
+		this.registerEvent(this.app.workspace.on('editor-change', (_, info) => {
+			if (info.file instanceof TFile) {
+				this.updateFrontmatter(info.file)
+			}
+		}))
 	}
 
 	onunload() {
@@ -62,6 +45,58 @@ export default class ModifiedFileListPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings)
+	}
+
+	/*
+	Will attempt to update the 'last-modified' property of the frontmatter of the given file.
+	It will attempt this by:
+	- Either adding a new value to 'last-modified' property. Or,
+	- If 'oneModificationPerDay' is true, updating any 'last-modified' property that was made on the same day to the most recent time.
+	The steps for this are as follows:
+	- Grab the most recent modification date from the YAML property (either last entry in 'modified-history' property, or from 'last-modified' property).
+	- Grab the current moment() (Is the date/time currently).
+	- Compare the diff() of the two moments. If the moment is greater than, 'updateInterval':
+		- If 'oneModificationPerDay' == true:
+			- update the 'modified-history' that is a part of the same or,
+		- Else
+			- Add a new entry to the 'modified-history' property.
+	*/
+	updateFrontmatter(file: TFile): void {
+		// moment() will return the current time to use later.
+		const currentMoment: Moment = moment()
+		// the cache where the YAML metadata can be found.
+		const cache: CachedMetadata | null = this.app.metadataCache.getFileCache(file)
+		// previous moment will be undefined unless one can be found in the frontmatter.
+		let previousMoment: Moment
+		// set to Infinity to start with. Will change if the current and previous moment can be found.
+		// at that point, a difference can be made and should be greater than 0 but less than Infinity.
+		let secondsSinceLastUpdate: number = Infinity
+		const isAppendArray: boolean = !this.settings?.oneModificationPerDay
+
+		// We have a property in the frontmatter of the file, we can use it's value.
+		if (cache?.frontmatter?.['last-modified'] != null) {
+			let last_modified_list: Array<any> = cache.frontmatter['last-modified']
+			let last_element_index: number = last_modified_list.length - 1
+			let previousEntry = cache.frontmatter['last-modified'][last_element_index]
+			previousMoment = moment(previousEntry, 'YYYY-MM-DDTHH:mm:ss')
+			
+			if (previousMoment.isValid()) {
+				secondsSinceLastUpdate = currentMoment.diff(previousMoment, 'seconds')
+			}
+		}
+		
+		// The new entry is created here when the seconds since last modification is greater than the update interval.
+		if (secondsSinceLastUpdate > this.settings.updateInterval) {
+			let newEntry: string = currentMoment.format('yyyy-MM-DDTHH:mm:ss')
+			let newEntries: Array<string> | null = cache?.frontmatter?.['last-modified']
+			
+			newEntries?.push(newEntry)
+
+			this.app.fileManager.processFrontMatter(file, frontmatter => {
+				// Update the modified date field
+				frontmatter['last-modified'] = newEntries
+			})
+		}
 	}
 }
 
@@ -94,82 +129,5 @@ class MetadataPrintModal extends Modal {
 	onClose(): void {
 		const {contentEl} = this
 		contentEl.empty()
-	}
-}
-
-class ModifiedFileListModal extends Modal {
-	constructor(app: App) {
-		super(app)
-	}
-
-	onOpen() {
-		const {contentEl} = this
-		contentEl.setText('Woah!')
-	}
-
-	onClose() {
-		const {contentEl} = this
-		contentEl.empty()
-	}
-}
-
-// The class for the settings tab that can be found in 'Settings > Community Plugins > YAML Metadata: Add Last Modified Property'
-class ModifiedFileListTab extends PluginSettingTab {
-	// Needs a reference to the plugin to be able to apply settings.
-	plugin: ModifiedFileListPlugin
-
-	constructor(app: App, plugin: ModifiedFileListPlugin) {
-		super(app, plugin)
-		this.plugin = plugin
-	}
-
-	display(): void {
-		const {containerEl} = this
-		
-		// The 'root' element of the settings tab.
-		containerEl.empty()
-
-		// This setting deals with the boolean that controls if modifications should be added one per day or
-		// shoudld be added multiple times a day (dependent on the update interval setting.) 
-		new Setting(containerEl)
-			.setName("Toggle One Modification Per Day")
-			.setDesc(`
-				Toggle between tracking modifications made to notes per day or by the interval set by Update Interval.
-				The most recent modification on the day will be used for that day.
-				Setting this to true will also disable Update Interval.
-				`)
-			.addToggle((toggle) => {
-				toggle.setTooltip('Toggle between one tracking per day modifications or not.')
-				toggle.setValue(this.plugin.settings.oneModificationPerDay)
-				toggle.onChange(async (value) => {
-					this.plugin.settings.oneModificationPerDay = value
-					await this.plugin.saveSettings()
-				})
-			})
-		
-		// The setting that deals with the interval between the last modification property being added and the new one to be added.
-		new Setting(containerEl)
-				.setName('Update Interval (In Seconds)')
-				.setDesc(`The amount of time between the last modification and the most recent modification before a new value is added
-					to the 'last-modified' list property.
-					A high update interval should be set otherwise, any single chagne will result in the addition of a new property value.`)
-				.addText((textfield) => {
-					textfield.setPlaceholder("E.g. '10'")
-					// Anything that is not a valid number is returned as NaN (Not a Number)
-					// This is checked for and the min is given back instead.
-					// Allows for simple check when trying to change the updateInterval
-					textfield.inputEl.inputMode = "numeric"
-					textfield.setValue(String(this.plugin.settings.updateInterval))
-					textfield.onChange(async (value) => {
-						if (isNaN(Number(value)) || Number(value) < MIN_UPDATE_INTERVAL)
-							this.plugin.settings.updateInterval = MIN_UPDATE_INTERVAL
-						else if (Number(value) > MAX_UPDATE_INTERVAL)
-							this.plugin.settings.updateInterval = MAX_UPDATE_INTERVAL
-						else
-							this.plugin.settings.updateInterval = Number(value)
-
-						await this.plugin.saveSettings()
-					})
-				})
 	}
 }
