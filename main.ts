@@ -49,7 +49,9 @@ export default class ModifiedFileListPlugin extends Plugin {
 
 	/** 
 	Will attempt to update the 'last-modified' property of the frontmatter of the given file.
-	@param {TFile} file - The file that is having it's frontmatter updated. 
+	@author James Sonneveld <https://github.com/JimJamBimBam>
+	@param {TFile} file - The file that is having it's frontmatter updated.
+	@returns {void} Nothing
 	*/
 	updateFrontmatter(file: TFile): void {
 		// moment() will return the current time to use later.
