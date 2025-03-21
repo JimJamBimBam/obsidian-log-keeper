@@ -92,13 +92,14 @@ export default class ModifiedFileListPlugin extends Plugin {
 				// Instead of pushing new entry to the end of the array,
 				// the most recent value on the same day should be updated to this time stamp
 				// if it exists that is.
-				if (typeof(previousMoment) !== 'undefined') {
+				if (typeof(finalIndex) !== 'undefined' && typeof(previousMoment) !== 'undefined') {					
+					// Moments on the same day, change entry to the most recent one,
+					// otherwise, push a new entry onto the array.
 					if (currentMoment.isSame(previousMoment, 'day'))
-						newEntries[Number(finalIndex)] = newEntry
-				}
-				// Else, the previous moment does not exist and needs to be pushed onto the array.
-				else {
-					newEntries.push(newEntry)
+						newEntries[finalIndex] = newEntry
+					else {
+						newEntries.push(newEntry)
+					}
 				}
 			}
 			else {
