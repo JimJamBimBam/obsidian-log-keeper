@@ -58,32 +58,54 @@ export default class ModifiedFileListPlugin extends Plugin {
 		const currentMoment: Moment = moment()
 		// the cache where the YAML metadata can be found.
 		const cache: CachedMetadata | null = this.app.metadataCache.getFileCache(file)
+		const isOneModificationPerDay: boolean = this.settings?.oneModificationPerDay
+		const updateInterval: number = this.settings.updateInterval
+		
 		// previous moment will be undefined unless one can be found in the frontmatter.
-		let previousMoment: Moment
+		let previousMoment: Moment | undefined
 		// set to Infinity to start with. Will change if the current and previous moment can be found.
 		// at that point, a difference can be made and should be greater than 0 but less than Infinity.
 		let secondsSinceLastUpdate: number = Infinity
-		const isAppendArray: boolean = !this.settings?.oneModificationPerDay
 
-		// We have a property in the frontmatter of the file, we can use it's value.
-		if (cache?.frontmatter?.['last-modified'] != null) {
-			let last_modified_list: Array<any> = cache.frontmatter['last-modified']
-			let last_element_index: number = last_modified_list.length - 1
-			let previousEntry = cache.frontmatter['last-modified'][last_element_index]
-			previousMoment = moment(previousEntry, 'YYYY-MM-DDTHH:mm:ss')
-			
-			if (previousMoment.isValid()) {
+		// Grabbing all previous entries to be able to calculations on time differences.
+		// When a file/note has no property, final index and previous entry will be undefined.
+		let previousEntries: Array<any> | undefined = cache?.frontmatter?.['last-modified']
+		let finalIndex: number | undefined = (typeof previousEntries === 'undefined' || previousEntries.length == 0) ? undefined : previousEntries.length - 1
+		let previousEntry: any | undefined = previousEntries?.[Number(finalIndex)] ?? undefined
+
+		previousMoment = typeof previousEntry === 'undefined' ? undefined : moment(previousEntry, 'YYYY-MM-DDTHH:mm:ss')
+
+		// Leave 'secondSinceLastUpdate' as Infinity if we want one modification per day
+		// as we always want to call the code that updates the frontmatter as if there is no delay.
+		if (!isOneModificationPerDay) {
+			if (previousMoment?.isValid()) {
 				secondsSinceLastUpdate = currentMoment.diff(previousMoment, 'seconds')
 			}
 		}
 		
 		// The new entry is created here when the seconds since last modification is greater than the update interval.
-		if (secondsSinceLastUpdate > this.settings.updateInterval) {
+		if (secondsSinceLastUpdate > updateInterval) {
 			let newEntry: string = currentMoment.format('yyyy-MM-DDTHH:mm:ss')
-			let newEntries: Array<string> | null = cache?.frontmatter?.['last-modified']
-			
-			newEntries?.push(newEntry)
+			let newEntries: Array<string> = previousEntries ?? []
 
+			if (isOneModificationPerDay) {
+				// Instead of pushing new entry to the end of the array,
+				// the most recent value on the same day should be updated to this time stamp
+				// if it exists that is.
+				if (typeof(previousMoment) !== 'undefined') {
+					if (currentMoment.isSame(previousMoment, 'day'))
+						newEntries[Number(finalIndex)] = newEntry
+				}
+				// Else, the previous moment does not exist and needs to be pushed onto the array.
+				else {
+					newEntries.push(newEntry)
+				}
+			}
+			else {
+				newEntries.push(newEntry)
+			}
+			
+			// The spot in the code where the frontmatter of the file is updated.
 			this.app.fileManager.processFrontMatter(file, frontmatter => {
 				// Update the modified date field
 				frontmatter['last-modified'] = newEntries
