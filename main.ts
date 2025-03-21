@@ -87,8 +87,9 @@ export default class ModifiedFileListPlugin extends Plugin {
 		if (secondsSinceLastUpdate > updateInterval) {
 			let newEntry: string = currentMoment.format('yyyy-MM-DDTHH:mm:ss')
 			let newEntries: Array<string> = previousEntries ?? []
-
-			if (isOneModificationPerDay) {
+			
+			// Must ignore one modification per day if there are no entries.
+			if (isOneModificationPerDay && newEntries.length > 0) {
 				// Instead of pushing new entry to the end of the array,
 				// the most recent value on the same day should be updated to this time stamp
 				// if it exists that is.
