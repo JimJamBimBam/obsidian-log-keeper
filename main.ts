@@ -27,10 +27,9 @@ export default class ModifiedFileListPlugin extends Plugin {
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new ModifiedFileListTab(this.app, this))
 
-		// This event is called when text is changed in a note.
-		this.registerEvent(this.app.workspace.on('editor-change', (_, info) => {
-			if (info.file instanceof TFile) {
-				this.updateFrontmatter(info.file)
+		this.registerEvent(this.app.vault.on('modify', (file) => {
+			if (file instanceof TFile) {
+				this.updateFrontmatter(file)
 			}
 		}))
 	}
@@ -51,68 +50,65 @@ export default class ModifiedFileListPlugin extends Plugin {
 	Will attempt to update the 'last-modified' property of the frontmatter of the given file.
 	@author James Sonneveld <https://github.com/JimJamBimBam>
 	@param {TFile} file - The file that is having it's frontmatter updated.
-	@returns {void} Nothing
+	@returns {Promise<void>} Nothing
 	*/
-	updateFrontmatter(file: TFile): void {
-		// moment() will return the current time to use later.
-		const currentMoment: Moment = moment()
-		// the cache where the YAML metadata can be found.
-		const cache: CachedMetadata | null = this.app.metadataCache.getFileCache(file)
-		const isOneModificationPerDay: boolean = this.settings?.oneModificationPerDay
-		const updateInterval: number = this.settings.updateInterval
-		
-		// previous moment will be undefined unless one can be found in the frontmatter.
-		let previousMoment: Moment | undefined
-		// set to Infinity to start with. Will change if the current and previous moment can be found.
-		// at that point, a difference can be made and should be greater than 0 but less than Infinity.
-		let secondsSinceLastUpdate: number = Infinity
-
-		// Grabbing all previous entries to be able to calculations on time differences.
-		// When a file/note has no property, final index and previous entry will be undefined.
-		let previousEntries: Array<any> | undefined = cache?.frontmatter?.['last-modified']
-		let finalIndex: number | undefined = (typeof previousEntries === 'undefined' || previousEntries.length == 0) ? undefined : previousEntries.length - 1
-		let previousEntry: any | undefined = previousEntries?.[Number(finalIndex)] ?? undefined
-
-		previousMoment = typeof previousEntry === 'undefined' ? undefined : moment(previousEntry, 'YYYY-MM-DDTHH:mm:ss')
-
-		// Leave 'secondSinceLastUpdate' as Infinity if we want one modification per day
-		// as we always want to call the code that updates the frontmatter as if there is no delay.
-		if (!isOneModificationPerDay) {
-			if (previousMoment?.isValid()) {
-				secondsSinceLastUpdate = currentMoment.diff(previousMoment, 'seconds')
-			}
-		}
-		
-		// The new entry is created here when the seconds since last modification is greater than the update interval.
-		if (secondsSinceLastUpdate > updateInterval) {
-			let newEntry: string = currentMoment.format('yyyy-MM-DDTHH:mm:ss')
-			let newEntries: Array<string> = previousEntries ?? []
+	async updateFrontmatter(file: TFile): Promise<void> {
+		await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+			// moment() will return the current time to use later.
+			const currentMoment: Moment = moment()
+			const isOneModificationPerDay: boolean = this.settings.oneModificationPerDay
+			const updateInterval: number = this.settings.updateInterval
 			
-			// Must ignore one modification per day if there are no entries.
-			if (isOneModificationPerDay && newEntries.length > 0) {
-				// Instead of pushing new entry to the end of the array,
-				// the most recent value on the same day should be updated to this time stamp
-				// if it exists that is.
-				if (typeof(finalIndex) !== 'undefined' && typeof(previousMoment) !== 'undefined') {					
-					// Moments on the same day, change entry to the most recent one,
-					// otherwise, push a new entry onto the array.
-					if (currentMoment.isSame(previousMoment, 'day'))
-						newEntries[finalIndex] = newEntry
-					else {
-						newEntries.push(newEntry)
-					}
+			// previous moment will be undefined unless one can be found in the frontmatter.
+			let previousMoment: Moment | undefined
+			// set to Infinity to start with. Will change if the current and previous moment can be found.
+			// at that point, a difference can be made and should be greater than 0 but less than Infinity.
+			let secondsSinceLastUpdate: number = Infinity
+
+			// Grabbing all previous entries to be able to calculations on time differences.
+			// When a file/note has no property, final index and previous entry will be undefined.
+			let previousEntries: Array<any> | undefined = frontmatter['last-modified']
+			let finalIndex: number | undefined = (typeof previousEntries === 'undefined' || previousEntries.length == 0) ? undefined : previousEntries.length - 1
+			let previousEntry: any | undefined = previousEntries?.[Number(finalIndex)] ?? undefined
+
+			previousMoment = typeof previousEntry === 'undefined' ? undefined : moment(previousEntry, 'YYYY-MM-DDTHH:mm:ss')
+
+			// Leave 'secondSinceLastUpdate' as Infinity if we want one modification per day
+			// as we always want to call the code that updates the frontmatter as if there is no delay.
+			if (!isOneModificationPerDay) {
+				if (previousMoment?.isValid()) {
+					secondsSinceLastUpdate = currentMoment.diff(previousMoment, 'seconds')
 				}
 			}
-			else {
-				newEntries.push(newEntry)
-			}
 			
-			// The spot in the code where the frontmatter of the file is updated.
-			this.app.fileManager.processFrontMatter(file, frontmatter => {
+			// The new entry is created here when the seconds since last modification is greater than the update interval.
+			if (secondsSinceLastUpdate > updateInterval) {
+				let newEntry: string = currentMoment.format('yyyy-MM-DDTHH:mm:ss')
+				let newEntries: Array<string> = previousEntries ?? []
+				
+				// Must ignore one modification per day if there are no entries.
+				if (isOneModificationPerDay && newEntries.length > 0) {
+					// Instead of pushing new entry to the end of the array,
+					// the most recent value on the same day should be updated to this time stamp
+					// if it exists that is.
+					if (typeof(finalIndex) !== 'undefined' && typeof(previousMoment) !== 'undefined') {					
+						// Moments on the same day, change entry to the most recent one,
+						// otherwise, push a new entry onto the array.
+						if (currentMoment.isSame(previousMoment, 'day'))
+							newEntries[finalIndex] = newEntry
+						else {
+							newEntries.push(newEntry)
+						}
+					}
+				}
+				else {
+					newEntries.push(newEntry)
+				}
+			
 				// Update the modified date field
 				frontmatter['last-modified'] = newEntries
-			})
-		}
+			}
+		})
 	}
 }
 
