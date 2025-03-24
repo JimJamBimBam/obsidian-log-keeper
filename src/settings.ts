@@ -1,7 +1,7 @@
 import ModifiedFileListPlugin from "main";
-import { PluginSettingTab, App, Setting } from "obsidian";
+import { PluginSettingTab, App, Setting, Notice } from "obsidian";
 
-// The 'class/file' of what the settings for the plugin cotain.
+// Plugin settings
 export interface ModifiedFileListSettings {
     // Boolean to disable/enable per day additions to the 'last modified' property.
     // If enabled, the most recent changes will be used as the last modified for that day.
@@ -10,25 +10,24 @@ export interface ModifiedFileListSettings {
     // When 'oneModificationPerDay' is set to false, new values will be added everytime there is 
     // a difference in the note AND the time between modifications exceeds or is equal to the updateInterval. 
     updateInterval: number
-	
 }
 
 // Minimum update interval is required to prevent spamming of modification values to the YAML property.
-export const MIN_UPDATE_INTERVAL: number = 60
+const MIN_UPDATE_INTERVAL: number = 60
 // Maximum update interval is the number of seconds in a day.
 // At that point, setting the 'oneModificationPerDay' boolean would be more beneficial
-export const MAX_UPDATE_INTERVAL: number = 84600
+const MAX_UPDATE_INTERVAL: number = 84600
 
-// The class for the settings tab that can be found in 'Settings > Community Plugins > YAML Metadata: Add Last Modified Property'
 // Default settings for the plugin
 export const DEFAULT_SETTINGS: ModifiedFileListSettings = {
     oneModificationPerDay: true,
-    updateInterval: 2
+    updateInterval: 60
 }
 
 export class ModifiedFileListTab extends PluginSettingTab {
 	// Needs a reference to the plugin to be able to apply settings.
 	plugin: ModifiedFileListPlugin
+	private warning_msg: string = ""
 
 	constructor(app: App, plugin: ModifiedFileListPlugin) {
 		super(app, plugin)
@@ -41,10 +40,9 @@ export class ModifiedFileListTab extends PluginSettingTab {
 		// The 'root' element of the settings tab.
 		containerEl.empty()
 
-		// This setting deals with the boolean that controls if modifications should be added one per day or
-		// shoudld be added multiple times a day (dependent on the update interval setting.) 
+		// ONE MODIFICATON PER DAY
 		new Setting(containerEl)
-			.setName("Toggle One Modification Per Day")
+			.setName("Toggle one modification per day")
 			.setDesc(`
 				Toggle between tracking modifications made to notes per day or by the interval set by Update Interval.
 				The most recent modification on the day will be used for that day.
@@ -56,35 +54,58 @@ export class ModifiedFileListTab extends PluginSettingTab {
 				toggle.onChange(async (value) => {
 					this.plugin.settings.oneModificationPerDay = value
 					await this.plugin.saveSettings()
+					this.display()
 				})
 			})
 
-		// The setting that deals with the interval between the last modification property being added and the new one to be added.
+		// UPDATE INTERVAL
 		new Setting(containerEl)
-			.setName('Update Interval (In Seconds)')
+			.setName('Update interval (in seconds)')
 			.setDesc(`
 					The amount of time between the last modification and the most recent modification before a new value is added
 					to the 'last-modified' list property.
-					A high update interval should be set otherwise, any single chagne will result in the addition of a new property value.
+					A high update interval should be set otherwise, any single change will result in the addition of a new property value.
 					`)
 			.addText((textfield) => {
-				textfield.setPlaceholder("E.g. '10'")
-				// Anything that is not a valid number is returned as NaN (Not a Number)
-				// This is checked for and the min is given back instead.
-				// Allows for simple check when trying to change the updateInterval
+				// Try not limit input for user on computer but will assist those on mobile.
 				textfield.inputEl.inputMode = "numeric"
-				textfield.setValue(String(this.plugin.settings.updateInterval))
+				textfield.setValue(this.plugin.settings.updateInterval.toString(10))
 				textfield.onChange(async (value) => {
-					if (isNaN(Number(value)) || Number(value) < MIN_UPDATE_INTERVAL)
-						this.plugin.settings.updateInterval = MIN_UPDATE_INTERVAL
-					else if (Number(value) > MAX_UPDATE_INTERVAL)
-						this.plugin.settings.updateInterval = MAX_UPDATE_INTERVAL
+					let valueNumber: number = Number(value)
 
-					else
-						this.plugin.settings.updateInterval = Number(value)
+					// Validate input here, ignoring erroneous inputs (non-number characters)
+					// and values that extend past the min and max.
+					if (isNaN(valueNumber)) {
+						this.warning_msg = `${this.plugin.manifest.name} - '${value}' is not a valid value for 'update interval'.\nSetting to previous value.`
+						return
+					}
+					else if (valueNumber < MIN_UPDATE_INTERVAL) {
+						this.warning_msg = `${this.plugin.manifest.name} - '${valueNumber}' is too low for 'update interval'.\nSetting to min value: ${MIN_UPDATE_INTERVAL}`
+						valueNumber = MIN_UPDATE_INTERVAL
+					}
+					else if (valueNumber > MAX_UPDATE_INTERVAL) {
+						this.warning_msg = `${this.plugin.manifest.name} - '${valueNumber}' is too high for 'update interval'.\nSetting to max value: ${MAX_UPDATE_INTERVAL}`
+						valueNumber = MAX_UPDATE_INTERVAL
+					}
 
+					this.plugin.settings.updateInterval = valueNumber
 					await this.plugin.saveSettings()
 				})
 			})
+			.setDisabled(this.plugin.settings.oneModificationPerDay)
+	}
+
+	hide(): void {
+		if (this.warning_msg.length > 0) {
+			this.printWarning();
+		}
+	}
+	
+	// For plugin only.
+	// Print warnings to user when putting in the wrong inputs for settings.
+	private printWarning() {
+		new Notice(this.warning_msg, 5000);
+		// Reset the warning message
+		this.warning_msg = '';
 	}
 }
