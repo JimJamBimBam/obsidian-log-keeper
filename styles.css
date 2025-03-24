@@ -1,8 +1,5 @@
-/*
-
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
-
-If your plugin does not need CSS, delete this file.
-
-*/
+:disabled {
+    opacity: 0.5; /* Makes the element appear faded */
+    pointer-events: none; /* Prevents interaction */
+    cursor: not-allowed; /* Changes the cursor to indicate it's disabled */
+}
