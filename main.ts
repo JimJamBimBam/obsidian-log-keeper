@@ -54,6 +54,11 @@ export default class ModifiedFileListPlugin extends Plugin {
 	*/
 	async updateFrontmatter(file: TFile): Promise<void> {
 		await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+			if (this.settings.ignoredFolders.some(folder => file.path.startsWith(folder + '/'))) {
+				// The folder the file is in is part of the exclusion list.
+				return
+			}
+			
 			// moment() will return the current time to use later.
 			const currentMoment: Moment = moment()
 			const isOneModificationPerDay: boolean = this.settings.oneModificationPerDay
