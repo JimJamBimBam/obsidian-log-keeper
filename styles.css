@@ -3,3 +3,21 @@
     pointer-events: none; /* Prevents interaction */
     cursor: not-allowed; /* Changes the cursor to indicate it's disabled */
 }
+
+.inner-setting {
+    background-color: var(--background-secondary);
+    border-top: none;
+    margin: auto 25px;
+    padding: 5px 10px;
+}
+
+.inner-setting:nth-child(2n) {
+    background-color: var(--background-primary);
+    border-top: none;
+    margin: auto 25px;
+    padding: 5px 10px;
+}
+
+.inner-setting > .setting-item-info > .setting-item-name {
+    color: red;
+}
