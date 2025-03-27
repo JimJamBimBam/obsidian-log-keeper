@@ -1,5 +1,6 @@
 import ModifiedFileListPlugin from "main";
 import { PluginSettingTab, App, Setting, Notice } from "obsidian";
+import { FolderSuggestModal } from "./FolderSuggestModal";
 
 // Plugin settings
 export interface ModifiedFileListSettings {
@@ -10,6 +11,7 @@ export interface ModifiedFileListSettings {
     // When 'oneModificationPerDay' is set to false, new values will be added everytime there is 
     // a difference in the note AND the time between modifications exceeds or is equal to the updateInterval. 
     updateInterval: number
+	ignoredFolders: Array<string>
 }
 
 // Minimum update interval is required to prevent spamming of modification values to the YAML property.
@@ -21,7 +23,8 @@ const MAX_UPDATE_INTERVAL: number = 84600
 // Default settings for the plugin
 export const DEFAULT_SETTINGS: ModifiedFileListSettings = {
     oneModificationPerDay: true,
-    updateInterval: 60
+    updateInterval: 60,
+	ignoredFolders: new Array()
 }
 
 export class ModifiedFileListTab extends PluginSettingTab {
@@ -36,6 +39,13 @@ export class ModifiedFileListTab extends PluginSettingTab {
 
 	display(): void {
 		const { containerEl } = this
+		
+		const suggestions: FolderSuggestModal = new FolderSuggestModal(this.app, async (folderPath) => {
+			if (!this.plugin.settings.ignoredFolders.includes(folderPath))
+				this.plugin.settings.ignoredFolders.push(folderPath)
+				await this.plugin.saveSettings()
+				this.display()
+		})
 
 		// The 'root' element of the settings tab.
 		containerEl.empty()
@@ -93,6 +103,32 @@ export class ModifiedFileListTab extends PluginSettingTab {
 				})
 			})
 			.setDisabled(this.plugin.settings.oneModificationPerDay)
+
+
+		// IGNORED FOLDERS
+		new Setting(containerEl)
+			.setName("Ignored folders")
+			.setDesc(`
+				Ignored folders will prevent notes within them from being stamped with a date and time.
+				`)
+			.addButton((button) => {
+				button.onClick(() => suggestions.open())
+				button.setButtonText("Add folder to ignore")
+			})
+		
+			this.plugin.settings.ignoredFolders.forEach((element, index) => {
+				new Setting(containerEl)
+					.setName(element)
+					.setClass('inner-setting')
+					.addButton(button => button
+						.setButtonText('Remove')
+						.onClick(async () => {
+							this.plugin.settings.ignoredFolders.splice(index, 1)
+							await this.plugin.saveSettings()
+							this.display()
+						})
+				)
+		})
 	}
 
 	hide(): void {
