@@ -7,17 +7,21 @@
 .inner-setting {
     background-color: var(--background-secondary);
     border-top: none;
-    margin: auto 25px;
+    margin: auto 10px;
     padding: 5px 10px;
 }
 
 .inner-setting:nth-child(2n) {
     background-color: var(--background-primary);
     border-top: none;
-    margin: auto 25px;
+    margin: auto 10px;
     padding: 5px 10px;
 }
 
 .inner-setting > .setting-item-info > .setting-item-name {
-    color: red;
+    color: var(--interactive-accent);
+}
+
+.query-highlight {
+    background-color: rgba(252, 252, 0, 0.2);
 }
