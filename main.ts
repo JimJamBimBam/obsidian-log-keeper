@@ -1,6 +1,7 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, MetadataCache, MarkdownFileInfo, TFile, FrontMatterCache, moment, CachedMetadata } from 'obsidian'
+import { Editor, Notice, Plugin, TFile, moment, CachedMetadata } from 'obsidian'
 import { ModifiedFileListTab, DEFAULT_SETTINGS, ModifiedFileListSettings } from 'src/settings'
 import { Moment } from 'moment'
+import { MetadataPrintModal } from 'src/MetadataPrintModal'
 
 export default class ModifiedFileListPlugin extends Plugin {
 	settings: ModifiedFileListSettings
@@ -117,34 +118,3 @@ export default class ModifiedFileListPlugin extends Plugin {
 	}
 }
 
-class MetadataPrintModal extends Modal {
-	metadata: MetadataCache
-	_test_metadata?: FrontMatterCache
-	view: MarkdownView | MarkdownFileInfo
-	settings: ModifiedFileListSettings
-	
-	constructor(app: App, view: MarkdownView | MarkdownFileInfo, settings: ModifiedFileListSettings) {
-		super(app)
-		this.view = view
-		this.settings = settings
-
-		if (app.metadataCache.getFileCache(view.file as TFile)) {
-			this._test_metadata = app.metadataCache.getFileCache(view.file as TFile)?.frontmatter
-		}
-	}
-
-	onOpen(): void {
-		const {contentEl} = this
-		for(const property in this._test_metadata) {
-			const text = `${property}: ${this._test_metadata[property]}\n`
-			contentEl.createEl('div', {text: text})
-		}
-		contentEl.createEl('div', {text: String(this.settings.oneModificationPerDay)})
-		contentEl.createEl('div', {text: String(this.settings.updateInterval)})
-	}
-
-	onClose(): void {
-		const {contentEl} = this
-		contentEl.empty()
-	}
-}
