@@ -1,7 +1,6 @@
 import { Editor, Notice, Plugin, TFile, moment, CachedMetadata } from 'obsidian'
 import { ModifiedFileListTab, DEFAULT_SETTINGS, ModifiedFileListSettings } from 'src/settings'
 import { Moment } from 'moment'
-import { MetadataPrintModal } from 'src/MetadataPrintModal'
 
 export default class ModifiedFileListPlugin extends Plugin {
 	settings: ModifiedFileListSettings
@@ -15,15 +14,6 @@ export default class ModifiedFileListPlugin extends Plugin {
 			)
 		
 		await this.loadSettings()
-		
-		// Command added for debugging purposes and to test various Obsidian functions.
-		this.addCommand({
-			id: 'debug-print-metadata',
-			name: 'DEBUG: Print Metadata',
-			editorCallback: (e, view) => {
-				new MetadataPrintModal(this.app, view, this.settings).open()
-			}
-		})
 
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new ModifiedFileListTab(this.app, this))
