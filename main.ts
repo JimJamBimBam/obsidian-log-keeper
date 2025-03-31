@@ -1,7 +1,16 @@
-import { Editor, Notice, Plugin, TFile, moment, CachedMetadata } from 'obsidian'
+import { Plugin, TFile, moment, FrontMatterCache } from 'obsidian'
 import { ModifiedFileListTab, DEFAULT_SETTINGS, ModifiedFileListSettings } from 'src/settings'
 import { Moment } from 'moment'
 
+type YAMLProperty = {
+	property: string | undefined,
+	value: any | undefined
+}
+
+/**
+ * @author James Sonneveld
+ * @link https://github.com/JimJamBimBam
+ */
 export default class ModifiedFileListPlugin extends Plugin {
 	settings: ModifiedFileListSettings
 
@@ -18,6 +27,10 @@ export default class ModifiedFileListPlugin extends Plugin {
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new ModifiedFileListTab(this.app, this))
 
+		// 'modify' event of  'this.app.vault' appears to be less buggy than
+		// 'editor-change' event in 'this.app.workspace'.
+		// If warning about 'file merging' happening too much,
+		// will need to consider another method of handling changes to files
 		this.registerEvent(this.app.vault.on('modify', (file) => {
 			if (file instanceof TFile) {
 				this.updateFrontmatter(file)
@@ -38,73 +51,119 @@ export default class ModifiedFileListPlugin extends Plugin {
 	}
 
 	/** 
-	Will attempt to update the 'last-modified' property of the frontmatter of the given file.
-	@author James Sonneveld <https://github.com/JimJamBimBam>
-	@param {TFile} file - The file that is having it's frontmatter updated.
-	@returns {Promise<void>} Nothing
+	* Will attempt to update the 'last-modified' property of the frontmatter of the given file.
+	* @author James Sonneveld https://github.com/JimJamBimBam
+	* @param {TFile} file - The file that is having it's frontmatter updated.
+	* @returns {Promise<void>} Nothing
 	*/
 	async updateFrontmatter(file: TFile): Promise<void> {
-		await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
-			if (this.settings.ignoredFolders.some(folder => file.path.startsWith(folder + '/'))) {
-				// The folder the file is in is part of the exclusion list.
+		await this.app.fileManager.processFrontMatter(file, (yamlData) => {
+			if (this.fileWithinIgnoredFolders(file)) {
+				// The folder the file is in is part of the exclusion list and should be ignored.
 				return
 			}
-			
-			// moment() will return the current time to use later.
-			const currentMoment: Moment = moment()
+			// Grab necessary settings as constants
 			const isOneModificationPerDay: boolean = this.settings.oneModificationPerDay
 			const updateInterval: number = this.settings.updateInterval
 			
-			// previous moment will be undefined unless one can be found in the frontmatter.
-			let previousMoment: Moment | undefined
+			// Makes the front matter type clearer by casting
+			const frontmatter = yamlData as FrontMatterCache
+			const yamlProperty: YAMLProperty = this.getPropertyFromFrontMatter('last-modified', frontmatter)
+			
+			const currentMoment: Moment = moment()
+			const previousMoment: Moment | null = this.getLatestMomentFromProperty(yamlProperty)
+			
 			// set to Infinity to start with. Will change if the current and previous moment can be found.
 			// at that point, a difference can be made and should be greater than 0 but less than Infinity.
 			let secondsSinceLastUpdate: number = Infinity
 
-			// Grabbing all previous entries to be able to calculations on time differences.
-			// When a file/note has no property, final index and previous entry will be undefined.
-			let previousEntries: Array<any> | undefined = frontmatter['last-modified']
-			let finalIndex: number | undefined = (typeof previousEntries === 'undefined' || previousEntries.length == 0) ? undefined : previousEntries.length - 1
-			let previousEntry: any | undefined = previousEntries?.[Number(finalIndex)] ?? undefined
-
-			previousMoment = typeof previousEntry === 'undefined' ? undefined : moment(previousEntry, 'YYYY-MM-DDTHH:mm:ss')
-
-			// Leave 'secondSinceLastUpdate' as Infinity if we want one modification per day
-			// as we always want to call the code that updates the frontmatter as if there is no delay.
+			// Setting one modification per day to true should always bypass the update interval that's set.
+			// This is achieved by keeping the seconds since last update set to Infinity,
+			// so that the comparison with the update interval always returns true.
 			if (!isOneModificationPerDay) {
 				if (previousMoment?.isValid()) {
 					secondsSinceLastUpdate = currentMoment.diff(previousMoment, 'seconds')
 				}
 			}
 			
-			// The new entry is created here when the seconds since last modification is greater than the update interval.
 			if (secondsSinceLastUpdate > updateInterval) {
-				let newEntry: string = currentMoment.format('yyyy-MM-DDTHH:mm:ss')
-				let newEntries: Array<string> = previousEntries ?? []
-				
-				// Must ignore one modification per day if there are no entries.
-				if (isOneModificationPerDay && newEntries.length > 0) {
-					// Instead of pushing new entry to the end of the array,
-					// the most recent value on the same day should be updated to this time stamp
-					// if it exists that is.
-					if (typeof(finalIndex) !== 'undefined' && typeof(previousMoment) !== 'undefined') {					
-						// Moments on the same day, change entry to the most recent one,
-						// otherwise, push a new entry onto the array.
-						if (currentMoment.isSame(previousMoment, 'day'))
-							newEntries[finalIndex] = newEntry
-						else {
-							newEntries.push(newEntry)
-						}
+				const newEntry: string = currentMoment.format('YYYY-MM-DDTHH:mm:ss')
+				let newEntries: string[]
+				let finalIndex: number
+
+				if (Array.isArray(yamlProperty.value)) {
+					newEntries = yamlProperty.value
+					// Empty arrays could put index into negatives.
+					// Prevent by taking max.
+					finalIndex = Math.max((newEntries.length - 1), 0)
+				}
+				else {
+					newEntries = []
+					finalIndex = 0
+				}
+
+				// Must ignore one modification per day if there are no entries (previousMoment is null).
+				if (isOneModificationPerDay && previousMoment?.isValid()) {
+					if (currentMoment.isSame(previousMoment, 'day')) {
+						// Change the entry for the same day rather than pushing a new one
+						// to match the expected behaviour of 'one modification per day'.
+						newEntries[finalIndex] = newEntry
+					}
+					else {
+						newEntries.push(newEntry)
 					}
 				}
 				else {
 					newEntries.push(newEntry)
 				}
 			
-				// Update the modified date field
 				frontmatter['last-modified'] = newEntries
 			}
 		})
+	}
+	
+	/** 
+	 * Compares the file parameter to the list of ignored folders, returning a boolean value.
+	 * @param {TFile} file File to compare with the ignored folders list.
+	 * @returns {boolean} Returns a boolean to say whether the file exists within the ignored folders.
+	 */
+	private fileWithinIgnoredFolders(file: TFile): boolean {
+		return this.settings.ignoredFolders.some((folder: string) => 
+			file.path.startsWith(folder + '/'))
+	}
+
+	/**
+	 * @param property the 'key' of the frontmatter.
+	 * @param fm the frontmatter object to get the property value from.
+	 * @returns Returns the YAML Property with the property name and value as one object.
+	 * Returns a YAML entry with both elements undefined if the array is undefined or empty.
+	 */
+	private getPropertyFromFrontMatter(property: string, fm: FrontMatterCache): YAMLProperty {
+		return {
+			property: property,
+			value: fm[property]
+		}
+	}
+
+	/**
+	 * Attempts to return the latest moment from the YAML property given whether that's single value or the last value in an array.
+	 * @param yamlProperty YAML property to pull the value from.
+	 * @returns Returns most recent moment from the yamlProperty or null if none is found.
+	 */
+	private getLatestMomentFromProperty(yamlProperty: YAMLProperty) {
+		const value: string | string[] | undefined = yamlProperty.value
+		let prevMoment: Moment | null = null
+		
+		// Check for the different types that 'value' could be.
+		if (Array.isArray(value)) {
+			let momentString: string = value[value.length - 1]
+			prevMoment = moment(momentString, 'YYYY-MM-DDTHH:mm:ss', true)
+		}
+		else if (String.isString(value)) {
+			prevMoment = moment(value, 'YYYY-MM-DDTHH:mm:ss', true)
+		}
+		
+		return prevMoment
 	}
 }
 
