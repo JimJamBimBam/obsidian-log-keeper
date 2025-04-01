@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-note-modification-tracker",
-	"version": "0.0.0-alpha.0",
+	"version": "0.0.0",
 	"description": "An Obsidian plugin that stamps notes with date and time of last modification in the YAML front mapper of the note.",
 	"main": "main.js",
 	"scripts": {
