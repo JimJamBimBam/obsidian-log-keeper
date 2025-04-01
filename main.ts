@@ -156,7 +156,7 @@ export default class ModifiedFileListPlugin extends Plugin {
 		
 		// Check for the different types that 'value' could be.
 		if (Array.isArray(value)) {
-			let momentString: string = value[value.length - 1]
+			const momentString: string = value[value.length - 1]
 			prevMoment = moment(momentString, 'YYYY-MM-DDTHH:mm:ss', true)
 		}
 		else if (String.isString(value)) {
