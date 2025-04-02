@@ -1,5 +1,5 @@
 import { Plugin, TFile, moment, FrontMatterCache } from 'obsidian'
-import { ModifiedFileListTab, DEFAULT_SETTINGS, ModifiedFileListSettings } from 'src/settings'
+import { ModifiedFileListTab, DEFAULT_SETTINGS, ModifiedFileListSettings } from './settings'
 import { Moment } from 'moment'
 
 type YAMLProperty = {
