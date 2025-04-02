@@ -1,19 +1,14 @@
 {
-	"name": "obsidian-note-modification-tracker",
+	"name": "note-modification-tracker",
 	"version": "0.0.0",
-	"description": "An Obsidian plugin that stamps notes with date and time of last modification in the YAML front mapper of the note.",
+	"description": "Generate time stamps automatically as changes are made to a note.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
-	"keywords": [
-		"metadata",
-		"obsidian-plugin",
-		"obsidian",
-		"plugin"
-	],
+	"keywords": [],
 	"author": "James Sonneveld",
 	"license": "MIT",
 	"devDependencies": {

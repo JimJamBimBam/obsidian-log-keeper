@@ -1,10 +1,10 @@
 {
-	"id": "obsidian-modified-file-list-property",
-	"name": "YAML Metadata: Add Last Modified Property",
+	"id": "note-modification-tracker",
+	"name": "Note Modification Tracker",
 	"version": "0.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Adds date/time stamp to notes YAML front mapper's 'last-modified' property after any modification is made. Allows for tracking of multiple days/times of modifications.",
+	"description": "Generate time stamps automatically as changes are made to a note.",
 	"author": "James Sonneveld",
 	"authorUrl": "https://github.com/JimJamBimBam",
-	"isDesktopOnly": true
+	"isDesktopOnly": false
 }
