@@ -1,12 +1,10 @@
-# Note Modification Tracker
+# Log Keeper
 
 <a href="https://github.com/JimJamBimBam/obsidian-note-modification-tracker/releases/latest">![Release Version Badge](https://img.shields.io/github/v/release/JimJamBimBam/obsidian-note-modification-tracker?display_name=release&logo=obsidian&color=%237C3AED)</a>
 <a>![Plugin Release Date](https://img.shields.io/github/release-date-pre/JimJamBimBam/obsidian-note-modification-tracker?display_date=published_at)
 </a>
 
-Track changes to your notes within your [Obsidian Vault](https://obsidian.md/) as you type.
-
-When the content of a note changes within a vault, a time-stamp is generated and added to the note's YAML property.
+Track changes to your notes within your [Obsidian Vault](https://obsidian.md/) as you type. When the content of a note changes within a vault, a new time stamp is generated or an original time stamp is edited, depending on the settings. This log is then added to a note's YAML property.
 
 ![Property Example](docs/images/property_example.png)
 *Example of the 'last-modified' property seen in Obsidian.*
@@ -21,8 +19,8 @@ All time stamps are formatted according to the [ISO 8601](https://en.wikipedia.o
 - **mm**: Is the current minute from 0-59
 - **ss**: Is the current second from 0-59
 
-![Plugin Note Example](docs/images/note_modification_tracker_example.gif)
-*Example of the 'last-modified' property being used in a note.*
+![Plugin Note Example](docs/images/log_keeper_plugin_text_example.gif)
+*Example of the 'last-modified' property being updated in a note when the Log Keeper plugin is enabled.*
 
 ## Uses
 
@@ -108,9 +106,9 @@ Listed in level of priority:
 #### Plugin
 
 - [ ] Add setting that allows users to format the time stamps of their notes using valid [Momentjs](https://momentjs.com/docs/#/displaying/format/) syntax.
-- [ ] Add commands to temporarily pause/unpause time stamping in case the user needs to make changes to the properties of a note without being bombarded with constant updates to the given note. This will reset after a note is closed.
+- [ ] Add commands to temporarily suspend time stamping if the user needs to make changes to the properties of a note, to avoid excessive updates. Time stamping will resume after a note is closed, or the command is called again.
 - [ ] Add setting that allows users to change the property name used for storing time stamps.
-- [ ] Add a command that allows users to update their time stamp property to the new property name given in settings.
+- [ ] Add a command that allows users to change the property name that is used to track changes. For example, changing "last-modified" to "log date".
 
 #### Github Repo
 
