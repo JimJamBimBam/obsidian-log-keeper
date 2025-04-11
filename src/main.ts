@@ -1,5 +1,5 @@
 import { Plugin, TFile, moment, FrontMatterCache } from 'obsidian'
-import { ModifiedFileListTab, DEFAULT_SETTINGS, ModifiedFileListSettings } from './settings'
+import { LogKeeperTab, DEFAULT_SETTINGS, LogKeeperSettings } from './settings'
 import { Moment } from 'moment'
 
 type YAMLProperty = {
@@ -11,8 +11,8 @@ type YAMLProperty = {
  * @author James Sonneveld
  * @link https://github.com/JimJamBimBam
  */
-export default class ModifiedFileListPlugin extends Plugin {
-	settings: ModifiedFileListSettings
+export default class LogKeeperPlugin extends Plugin {
+	settings: LogKeeperSettings
 
 	async onload() {
 		// Logging debugging information on load.
@@ -25,7 +25,7 @@ export default class ModifiedFileListPlugin extends Plugin {
 		await this.loadSettings()
 
 		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new ModifiedFileListTab(this.app, this))
+		this.addSettingTab(new LogKeeperTab(this.app, this))
 
 		// 'modify' event of  'this.app.vault' appears to be less buggy than
 		// 'editor-change' event in 'this.app.workspace'.

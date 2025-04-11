@@ -1,6 +1,6 @@
 # Log Keeper
 
-<a href="https://github.com/JimJamBimBam/obsidian-note-modification-tracker/releases/latest">![Release Version Badge](https://img.shields.io/github/v/release/JimJamBimBam/obsidian-note-modification-tracker?display_name=release&logo=obsidian&color=%237C3AED)</a>
+<a href="https://github.com/JimJamBimBam/obsidian-log-keeper/releases/latest">![Release Version Badge](https://img.shields.io/github/v/release/JimJamBimBam/obsidian-note-modification-tracker?display_name=release&logo=obsidian&color=%237C3AED)</a>
 <a>![Plugin Release Date](https://img.shields.io/github/release-date-pre/JimJamBimBam/obsidian-note-modification-tracker?display_date=published_at)
 </a>
 
