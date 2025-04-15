@@ -45,7 +45,7 @@ export class FolderSuggestModal extends SuggestModal<string> {
 		// 'replace' from inserting <span></span> between each character.
 		if (this.query.length > 0) {
 			const highlightedStr: string = this.applyStyleToSubstringWithin(value, this.query, 'query-highlight');
-			el.innerHTML = highlightedStr
+			el.createSpan(highlightedStr)
 		}
 	}
 	
