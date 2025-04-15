@@ -1,7 +1,7 @@
 {
 	"id": "obsidian-log-keeper",
 	"name": "Log Keeper",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"minAppVersion": "0.15.0",
 	"description": "Generate time stamps automatically as changes are made to a note.",
 	"author": "James Sonneveld",

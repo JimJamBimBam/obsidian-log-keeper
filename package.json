@@ -1,6 +1,6 @@
 {
 	"name": "log-keeper",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"description": "Generate time stamps automatically as changes are made to a note.",
 	"main": "main.js",
 	"scripts": {
