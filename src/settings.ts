@@ -52,11 +52,10 @@ export class LogKeeperTab extends PluginSettingTab {
 
 		// ONE MODIFICATON PER DAY
 		new Setting(containerEl)
-			.setName("Toggle one modification per day")
+			.setName("Toggle per day logging")
 			.setDesc(`
-				Toggle between tracking modifications made to notes per day or by the interval set by Update Interval.
-				The most recent modification on the day will be used for that day.
-				Setting this to true will also disable Update Interval.
+				If toggled on, notes will only track the most recent modification made on that day, overwriting any previous modifications made for the same day.
+				When toggled off, modifications will be tracked based on the update interval.
 				`)
 			.addToggle((toggle) => {
 				toggle.setTooltip('Toggle between one tracking per day modifications or not.')
@@ -70,11 +69,11 @@ export class LogKeeperTab extends PluginSettingTab {
 
 		// UPDATE INTERVAL
 		new Setting(containerEl)
-			.setName('Update interval (in seconds)')
+			.setName('Update interval')
 			.setDesc(`
-					The amount of time between the last modification and the most recent modification before a new value is added
+					The amount of time (in seconds) between the last modification and the most recent modification before a new value is added
 					to the 'last-modified' list property.
-					A high update interval should be set otherwise, any single change will result in the addition of a new property value.
+					The minimum amount of time between updates is fixed at 60 seconds to prevent excessive updates to the 'last-modified' property.
 					`)
 			.addText((textfield) => {
 				// Try not limit input for user on computer but will assist those on mobile.
