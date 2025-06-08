@@ -15,13 +15,6 @@ export default class LogKeeperPlugin extends Plugin {
 	settings: LogKeeperSettings
 
 	async onload() {
-		// Logging debugging information on load.
-		console.log(`Activating: ${this.manifest.name}\n
-			 Version: ${this.manifest.version}
-			 Author: ${this.manifest.author}
-			 Author URL: ${this.manifest.authorUrl}`
-			)
-		
 		await this.loadSettings()
 
 		// This adds a settings tab so the user can configure various aspects of the plugin
