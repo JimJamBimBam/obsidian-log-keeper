@@ -52,6 +52,7 @@ export class LogKeeperTab extends PluginSettingTab {
 
 		// ONE MODIFICATON PER DAY
 		new Setting(containerEl)
+			.setClass('log-keeper-setting')
 			.setName("Toggle one modification per day")
 			.setDesc(`
 				Toggle between tracking modifications made to notes per day or by the interval set by Update Interval.
@@ -70,6 +71,7 @@ export class LogKeeperTab extends PluginSettingTab {
 
 		// UPDATE INTERVAL
 		new Setting(containerEl)
+			.setClass('log-keeper-setting')
 			.setName('Update interval (in seconds)')
 			.setDesc(`
 					The amount of time between the last modification and the most recent modification before a new value is added
@@ -107,6 +109,7 @@ export class LogKeeperTab extends PluginSettingTab {
 
 		// IGNORED FOLDERS
 		new Setting(containerEl)
+			.setClass('log-keeper-setting')
 			.setName("Ignored folders")
 			.setDesc(`
 				Ignored folders will prevent notes within them from being stamped with a date and time.
@@ -119,16 +122,17 @@ export class LogKeeperTab extends PluginSettingTab {
 			this.plugin.settings.ignoredFolders.forEach((element, index) => {
 				new Setting(containerEl)
 					.setName(element)
-					.setClass('inner-setting')
-					.addButton(button => button
-						.setButtonText('Remove')
+					.setClass('log-keeper-setting-inner')
+					.addExtraButton(extraButton => extraButton
+						.setIcon('cross')
+						.setTooltip('Delete')
 						.onClick(async () => {
 							this.plugin.settings.ignoredFolders.splice(index, 1)
 							await this.plugin.saveSettings()
 							this.display()
 						})
-				)
-		})
+					)
+			})
 	}
 
 	hide(): void {
