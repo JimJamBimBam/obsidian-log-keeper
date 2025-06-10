@@ -1,9 +1,9 @@
-import ModifiedFileListPlugin from "main";
+import LogKeeperPlugin from "main";
 import { PluginSettingTab, App, Setting, Notice } from "obsidian";
 import { FolderSuggestModal } from "./FolderSuggestModal";
 
 // Plugin settings
-export interface ModifiedFileListSettings {
+export interface LogKeeperSettings {
     // Boolean to disable/enable per day additions to the 'last modified' property.
     // If enabled, the most recent changes will be used as the last modified for that day.
     oneModificationPerDay: boolean
@@ -21,18 +21,18 @@ const MIN_UPDATE_INTERVAL: number = 60
 const MAX_UPDATE_INTERVAL: number = 84600
 
 // Default settings for the plugin
-export const DEFAULT_SETTINGS: ModifiedFileListSettings = {
+export const DEFAULT_SETTINGS: LogKeeperSettings = {
     oneModificationPerDay: true,
     updateInterval: 60,
 	ignoredFolders: new Array()
 }
 
-export class ModifiedFileListTab extends PluginSettingTab {
+export class LogKeeperTab extends PluginSettingTab {
 	// Needs a reference to the plugin to be able to apply settings.
-	plugin: ModifiedFileListPlugin
+	plugin: LogKeeperPlugin
 	private warning_msg: string = ""
 
-	constructor(app: App, plugin: ModifiedFileListPlugin) {
+	constructor(app: App, plugin: LogKeeperPlugin) {
 		super(app, plugin)
 		this.plugin = plugin
 	}
