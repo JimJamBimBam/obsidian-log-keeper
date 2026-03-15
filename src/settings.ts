@@ -80,24 +80,20 @@ export class LogKeeperTab extends PluginSettingTab {
 			.addText((textfield) => {
 				// Try not limit input for user on computer but will assist those on mobile.
 				textfield.inputEl.inputMode = "numeric"
+				textfield.inputEl.type = "number"
+				textfield.setPlaceholder(MIN_UPDATE_INTERVAL.toString(10))
+				textfield.inputEl.min = MIN_UPDATE_INTERVAL.toString(10)
+				textfield.inputEl.max = MAX_UPDATE_INTERVAL.toString(10)
 				textfield.setValue(this.plugin.settings.updateInterval.toString(10))
 				textfield.onChange(async (value) => {
-					let valueNumber: number = Number(value)
-
 					// Validate input here, ignoring erroneous inputs (non-number characters)
 					// and values that extend past the min and max.
-					if (isNaN(valueNumber)) {
-						this.warning_msg = `${this.plugin.manifest.name} - '${value}' is not a valid value for 'update interval'.\nSetting to previous value.`
-						return
-					}
-					else if (valueNumber < MIN_UPDATE_INTERVAL) {
-						this.warning_msg = `${this.plugin.manifest.name} - '${valueNumber}' is too low for 'update interval'.\nSetting to min value: ${MIN_UPDATE_INTERVAL}`
-						valueNumber = MIN_UPDATE_INTERVAL
-					}
-					else if (valueNumber > MAX_UPDATE_INTERVAL) {
-						this.warning_msg = `${this.plugin.manifest.name} - '${valueNumber}' is too high for 'update interval'.\nSetting to max value: ${MAX_UPDATE_INTERVAL}`
-						valueNumber = MAX_UPDATE_INTERVAL
-					}
+					let valueNumber: number = parseInt(value)
+					if (isNaN(valueNumber)) { return }
+					// Testing for min value
+					valueNumber = valueNumber < MIN_UPDATE_INTERVAL ? MIN_UPDATE_INTERVAL : valueNumber
+					//Testing for max value
+					valueNumber = valueNumber > MAX_UPDATE_INTERVAL ? MAX_UPDATE_INTERVAL : valueNumber
 
 					this.plugin.settings.updateInterval = valueNumber
 					await this.plugin.saveSettings()
