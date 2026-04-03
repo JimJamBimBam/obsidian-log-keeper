@@ -265,10 +265,10 @@ export default class LogKeeperPlugin extends Plugin {
 		return `sig-${(hash >>> 0).toString(16)}`
 	}
 
-	/** 
+	/**
 	* Will attempt to update the 'last-modified' property of the frontmatter of the given file.
 	* @author James Sonneveld https://github.com/JimJamBimBam
-	* @param {TFile} file - The file that is having it's frontmatter updated.
+	* @param {TFile} file - The file that is having its frontmatter updated.
 	* @returns {Promise<void>} Nothing
 	*/
 	async updateFrontmatter(file: TFile): Promise<void> {
@@ -318,14 +318,14 @@ export default class LogKeeperPlugin extends Plugin {
 			}
 		})
 	}
-	
+
 	/** 
 	 * Compares the file parameter to the list of ignored folders, returning a boolean value.
 	 * @param {TFile} file File to compare with the ignored folders list.
 	 * @returns {boolean} Returns a boolean to say whether the file exists within the ignored folders.
 	 */
 	private fileWithinIgnoredFolders(file: TFile): boolean {
-		return this.settings.ignoredFolders.some((folder: string) => 
+		return this.settings.ignoredFolders.some((folder: string) =>
 			file.path.startsWith(folder + '/'))
 	}
 
@@ -333,7 +333,6 @@ export default class LogKeeperPlugin extends Plugin {
 	 * @param property the 'key' of the frontmatter.
 	 * @param fm the frontmatter object to get the property value from.
 	 * @returns Returns the YAML Property with the property name and value as one object.
-	 * Returns a YAML entry with both elements undefined if the array is undefined or empty.
 	 */
 	private getPropertyFromFrontMatter(property: string, fm: FrontMatterCache): YAMLProperty {
 		return {
@@ -381,4 +380,3 @@ export default class LogKeeperPlugin extends Plugin {
 		return parsed.isValid() ? parsed : null
 	}
 }
-
