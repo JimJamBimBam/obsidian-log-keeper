@@ -1,11 +1,15 @@
-import { Plugin, TFile, moment, FrontMatterCache } from 'obsidian'
+import { Plugin, TFile, moment, FrontMatterCache, MarkdownView } from 'obsidian'
 import { LogKeeperTab, DEFAULT_SETTINGS, LogKeeperSettings } from './settings'
 import { Moment } from 'moment'
 
 type YAMLProperty = {
 	property: string | undefined,
-	value: any | undefined
+	value: unknown
 }
+
+const LAST_MODIFIED_PROPERTY = 'last-modified'
+const TIMESTAMP_FORMAT = 'YYYY-MM-DDTHH:mm:ss'
+const DEBOUNCE_UPDATE_MS = 10_000
 
 /**
  * @author James Sonneveld
@@ -13,6 +17,9 @@ type YAMLProperty = {
  */
 export default class LogKeeperPlugin extends Plugin {
 	settings: LogKeeperSettings
+	private pendingUpdateTimers: Map<string, ReturnType<typeof setTimeout>> = new Map()
+	private pendingUpdateSignatures: Map<string, string> = new Map()
+	private lastMeaningfulSignatures: Map<string, string> = new Map()
 
 	async onload() {
 		await this.loadSettings()
@@ -20,19 +27,45 @@ export default class LogKeeperPlugin extends Plugin {
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new LogKeeperTab(this.app, this))
 
-		// 'modify' event of  'this.app.vault' appears to be less buggy than
-		// 'editor-change' event in 'this.app.workspace'.
-		// If warning about 'file merging' happening too much,
-		// will need to consider another method of handling changes to files
-		this.registerEvent(this.app.vault.on('modify', (file) => {
-			if (file instanceof TFile) {
-				this.updateFrontmatter(file)
+		// editor-change can fire for programmatic changes as well as user edits.
+		// To avoid feedback loops, we only react when a normalized content signature
+		// (content excluding the tracked frontmatter property) has changed.
+		this.registerEvent(this.app.workspace.on('editor-change', (editor, info) => {
+			if (!(info instanceof MarkdownView) || !info.file) {
+				return
 			}
+
+			const file = info.file
+			if (this.fileWithinIgnoredFolders(file)) {
+				return
+			}
+
+			const currentSignature = this.getContentSignature(editor.getValue())
+			const previousSignature = this.lastMeaningfulSignatures.get(file.path)
+
+			// Prime baseline for this file in-memory. This avoids an unnecessary write
+			// on first editor-change after app/plugin restart.
+			if (previousSignature === undefined) {
+				this.lastMeaningfulSignatures.set(file.path, currentSignature)
+				return
+			}
+
+			if (previousSignature === currentSignature) {
+				return
+			}
+
+			this.lastMeaningfulSignatures.set(file.path, currentSignature)
+			this.scheduleFrontmatterUpdate(file, currentSignature)
 		}))
 	}
 
 	onunload() {
-
+		for (const timer of this.pendingUpdateTimers.values()) {
+			clearTimeout(timer)
+		}
+		this.pendingUpdateTimers.clear()
+		this.pendingUpdateSignatures.clear()
+		this.lastMeaningfulSignatures.clear()
 	}
 
 	async loadSettings() {
@@ -43,6 +76,155 @@ export default class LogKeeperPlugin extends Plugin {
 		await this.saveData(this.settings)
 	}
 
+	private scheduleFrontmatterUpdate(file: TFile, scheduledSignature: string): void {
+		const filePath = file.path
+		const existingTimer = this.pendingUpdateTimers.get(filePath)
+		if (existingTimer) {
+			clearTimeout(existingTimer)
+		}
+
+		this.pendingUpdateSignatures.set(filePath, scheduledSignature)
+
+		const timer = setTimeout(() => {
+			this.pendingUpdateTimers.delete(filePath)
+			void this.flushScheduledFrontmatterUpdate(file, scheduledSignature)
+		}, DEBOUNCE_UPDATE_MS)
+
+		this.pendingUpdateTimers.set(filePath, timer)
+	}
+
+	private async flushScheduledFrontmatterUpdate(file: TFile, scheduledSignature: string): Promise<void> {
+		const filePath = file.path
+
+		if (this.fileWithinIgnoredFolders(file)) {
+			this.pendingUpdateSignatures.delete(filePath)
+			return
+		}
+
+		const latestScheduledSignature = this.pendingUpdateSignatures.get(filePath)
+		if (latestScheduledSignature !== scheduledSignature) {
+			// Stale timer.
+			return
+		}
+
+		const latestMeaningfulSignature = this.lastMeaningfulSignatures.get(filePath)
+		if (latestMeaningfulSignature !== scheduledSignature) {
+			// Content changed again after this timer was scheduled.
+			return
+		}
+
+		const currentSignature = await this.getCurrentFileSignature(file)
+		if (currentSignature === null) {
+			return
+		}
+
+		if (currentSignature !== scheduledSignature) {
+			// The latest editor content changed since scheduling (e.g. more typing).
+			this.lastMeaningfulSignatures.set(filePath, currentSignature)
+			this.scheduleFrontmatterUpdate(file, currentSignature)
+			return
+		}
+
+		await this.updateFrontmatter(file)
+
+		// Keep the signature as-is. A plugin self-write only touches the tracked
+		// frontmatter property, so normalized content signature should not change.
+		this.pendingUpdateSignatures.delete(filePath)
+	}
+
+	private async getCurrentFileSignature(file: TFile): Promise<string | null> {
+		const activeView = this.app.workspace.getActiveViewOfType(MarkdownView)
+		if (activeView?.file?.path === file.path) {
+			return this.getContentSignature(activeView.editor.getValue())
+		}
+
+		try {
+			const content = await this.app.vault.cachedRead(file)
+			return this.getContentSignature(content)
+		}
+		catch {
+			return null
+		}
+	}
+
+	private getContentSignature(content: string): string {
+		const normalizedContent = this.removeLastModifiedFromFrontmatter(content)
+		return this.hashString(normalizedContent)
+	}
+
+	private removeLastModifiedFromFrontmatter(content: string): string {
+		const lines = content.split(/\r?\n/)
+		if (lines.length === 0 || lines[0].trim() !== '---') {
+			return content
+		}
+
+		let endFenceIndex = -1
+		for (let index = 1; index < lines.length; index++) {
+			if (lines[index].trim() === '---') {
+				endFenceIndex = index
+				break
+			}
+		}
+
+		if (endFenceIndex === -1) {
+			return content
+		}
+
+		const frontmatterLines = lines.slice(1, endFenceIndex)
+		const bodyLines = lines.slice(endFenceIndex + 1)
+		const filteredFrontmatter = this.removeTrackedPropertyFromFrontmatterLines(frontmatterLines)
+
+		if (filteredFrontmatter.length === 0) {
+			return bodyLines.join('\n')
+		}
+
+		return `---\n${filteredFrontmatter.join('\n')}\n---\n${bodyLines.join('\n')}`
+	}
+
+	private removeTrackedPropertyFromFrontmatterLines(lines: string[]): string[] {
+		const filtered: string[] = []
+		const keyPattern = /^([ \t]*)(?:['"]?last-modified['"]?)\s*:(.*)$/
+
+		for (let index = 0; index < lines.length; index++) {
+			const line = lines[index]
+			const keyMatch = line.match(keyPattern)
+			if (!keyMatch) {
+				filtered.push(line)
+				continue
+			}
+
+			const baseIndent = keyMatch[1].length
+			const valuePart = keyMatch[2].trim()
+
+			if (valuePart.length === 0 || valuePart === '|' || valuePart === '>') {
+				while (index + 1 < lines.length) {
+					const nextLine = lines[index + 1]
+					const nextIndent = nextLine.match(/^[ \t]*/)?.[0].length ?? 0
+					if (nextLine.trim().length === 0) {
+						index++
+						continue
+					}
+					if (nextIndent > baseIndent) {
+						index++
+						continue
+					}
+					break
+				}
+			}
+		}
+
+		return filtered
+	}
+
+	private hashString(input: string): string {
+		let hash = 5381
+		for (let index = 0; index < input.length; index++) {
+			hash = ((hash << 5) + hash) + input.charCodeAt(index)
+			hash |= 0
+		}
+		return `sig-${(hash >>> 0).toString(16)}`
+	}
+
 	/** 
 	* Will attempt to update the 'last-modified' property of the frontmatter of the given file.
 	* @author James Sonneveld https://github.com/JimJamBimBam
@@ -50,71 +232,53 @@ export default class LogKeeperPlugin extends Plugin {
 	* @returns {Promise<void>} Nothing
 	*/
 	async updateFrontmatter(file: TFile): Promise<void> {
-		await this.app.fileManager.processFrontMatter(file, (yamlData) => {
-			if (this.fileWithinIgnoredFolders(file)) {
-				// The folder the file is in is part of the exclusion list and should be ignored.
-				return
-			}
-			// Grab necessary settings as constants
-			const isOneModificationPerDay: boolean = this.settings.oneModificationPerDay
-			const updateInterval: number = this.settings.updateInterval
-			
-			// Makes the front matter type clearer by casting
-			const frontmatter = yamlData as FrontMatterCache
-			const yamlProperty: YAMLProperty = this.getPropertyFromFrontMatter('last-modified', frontmatter)
-			
-			const currentMoment: Moment = moment()
-			const previousMoment: Moment | null = this.getLatestMomentFromProperty(yamlProperty)
-			
-			// set to Infinity to start with. Will change if the current and previous moment can be found.
-			// at that point, a difference can be made and should be greater than 0 but less than Infinity.
-			let secondsSinceLastUpdate: number = Infinity
+		if (this.fileWithinIgnoredFolders(file)) {
+			return
+		}
 
-			// Setting one modification per day to true should always bypass the update interval that's set.
-			// This is achieved by keeping the seconds since last update set to Infinity,
-			// so that the comparison with the update interval always returns true.
-			if (!isOneModificationPerDay) {
+		await this.app.fileManager.processFrontMatter(file, (yamlData) => {
+			const frontmatter = yamlData as FrontMatterCache
+			const yamlProperty: YAMLProperty = this.getPropertyFromFrontMatter(LAST_MODIFIED_PROPERTY, frontmatter)
+
+			const isOneModificationPerDay = this.settings.oneModificationPerDay
+			const updateInterval = this.settings.updateInterval
+
+			const existingEntries = this.getNormalizedTimestampEntries(yamlProperty.value, isOneModificationPerDay)
+			const previousMoment = this.getLatestMomentFromEntries(existingEntries)
+			const currentMoment = moment()
+			const newEntry = currentMoment.format(TIMESTAMP_FORMAT)
+
+			let shouldWrite = false
+			const nextEntries = [...existingEntries]
+
+			if (isOneModificationPerDay) {
+				shouldWrite = true
+
+				if (previousMoment?.isValid() && currentMoment.isSame(previousMoment, 'day')) {
+					nextEntries[nextEntries.length - 1] = newEntry
+				}
+				else {
+					nextEntries.push(newEntry)
+				}
+			}
+			else {
+				let secondsSinceLastUpdate = Infinity
 				if (previousMoment?.isValid()) {
 					secondsSinceLastUpdate = currentMoment.diff(previousMoment, 'seconds')
 				}
+
+				if (secondsSinceLastUpdate > updateInterval) {
+					shouldWrite = true
+					nextEntries.push(newEntry)
+				}
 			}
-			
-			if (secondsSinceLastUpdate > updateInterval) {
-				const newEntry: string = currentMoment.format('YYYY-MM-DDTHH:mm:ss')
-				let newEntries: string[]
-				let finalIndex: number
 
-				if (Array.isArray(yamlProperty.value)) {
-					newEntries = yamlProperty.value
-					// Empty arrays could put index into negatives.
-					// Prevent by taking max.
-					finalIndex = Math.max((newEntries.length - 1), 0)
-				}
-				else {
-					newEntries = []
-					finalIndex = 0
-				}
-
-				// Must ignore one modification per day if there are no entries (previousMoment is null).
-				if (isOneModificationPerDay && previousMoment?.isValid()) {
-					if (currentMoment.isSame(previousMoment, 'day')) {
-						// Change the entry for the same day rather than pushing a new one
-						// to match the expected behaviour of 'one modification per day'.
-						newEntries[finalIndex] = newEntry
-					}
-					else {
-						newEntries.push(newEntry)
-					}
-				}
-				else {
-					newEntries.push(newEntry)
-				}
-			
-				frontmatter['last-modified'] = newEntries
+			if (shouldWrite) {
+				frontmatter[LAST_MODIFIED_PROPERTY] = this.getNormalizedTimestampEntries(nextEntries, isOneModificationPerDay)
 			}
 		})
 	}
-	
+
 	/** 
 	 * Compares the file parameter to the list of ignored folders, returning a boolean value.
 	 * @param {TFile} file File to compare with the ignored folders list.
@@ -139,24 +303,63 @@ export default class LogKeeperPlugin extends Plugin {
 	}
 
 	/**
-	 * Attempts to return the latest moment from the YAML property given whether that's single value or the last value in an array.
-	 * @param yamlProperty YAML property to pull the value from.
-	 * @returns Returns most recent moment from the yamlProperty or null if none is found.
+	 * Return a sorted and normalized array of timestamps from frontmatter.
+	 * Invalid entries are ignored.
 	 */
-	private getLatestMomentFromProperty(yamlProperty: YAMLProperty) {
-		const value: string | string[] | undefined = yamlProperty.value
-		let prevMoment: Moment | null = null
-		
-		// Check for the different types that 'value' could be.
-		if (Array.isArray(value)) {
-			const momentString: string = value[value.length - 1]
-			prevMoment = moment(momentString, 'YYYY-MM-DDTHH:mm:ss', true)
+	private getNormalizedTimestampEntries(value: unknown, oneModificationPerDay: boolean): string[] {
+		const parsedMoments: Moment[] = []
+		const values = Array.isArray(value) ? value : [value]
+
+		for (const entry of values) {
+			if (typeof entry !== 'string') {
+				continue
+			}
+
+			const parsed = moment(entry, TIMESTAMP_FORMAT, true)
+			if (parsed.isValid()) {
+				parsedMoments.push(parsed)
+			}
 		}
-		else if (String.isString(value)) {
-			prevMoment = moment(value, 'YYYY-MM-DDTHH:mm:ss', true)
+
+		parsedMoments.sort((left, right) => left.valueOf() - right.valueOf())
+
+		if (oneModificationPerDay) {
+			const latestByDay = new Map<string, Moment>()
+
+			for (const timestamp of parsedMoments) {
+				latestByDay.set(timestamp.format('YYYY-MM-DD'), timestamp)
+			}
+
+			return [...latestByDay.values()]
+				.sort((left, right) => left.valueOf() - right.valueOf())
+				.map((timestamp) => timestamp.format(TIMESTAMP_FORMAT))
 		}
-		
-		return prevMoment
+
+		const unique = new Set<string>()
+		const ordered: string[] = []
+		for (const timestamp of parsedMoments) {
+			const formatted = timestamp.format(TIMESTAMP_FORMAT)
+			if (!unique.has(formatted)) {
+				unique.add(formatted)
+				ordered.push(formatted)
+			}
+		}
+
+		return ordered
+	}
+
+	/**
+	 * Attempts to return the latest moment in an array of timestamps.
+	 * @param entries An ordered list of timestamp strings.
+	 * @returns Returns most recent moment from entries or null if none is found.
+	 */
+	private getLatestMomentFromEntries(entries: string[]): Moment | null {
+		if (entries.length === 0) {
+			return null
+		}
+
+		const latestEntry = entries[entries.length - 1]
+		const parsed = moment(latestEntry, TIMESTAMP_FORMAT, true)
+		return parsed.isValid() ? parsed : null
 	}
 }
-
