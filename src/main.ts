@@ -1,4 +1,4 @@
-import { Plugin, TFile, moment, FrontMatterCache, MarkdownView } from 'obsidian'
+import { Plugin, TFile, moment, FrontMatterCache, MarkdownView, getFrontMatterInfo } from 'obsidian'
 import { LogKeeperTab, DEFAULT_SETTINGS, LogKeeperSettings } from './settings'
 import { Moment } from 'moment'
 
@@ -153,37 +153,26 @@ export default class LogKeeperPlugin extends Plugin {
 	}
 
 	private removeLastModifiedFromFrontmatter(content: string): string {
-		const lines = content.split(/\r?\n/)
-		if (lines.length === 0 || lines[0].trim() !== '---') {
+		const frontMatterInfo = getFrontMatterInfo(content)
+
+		if (!frontMatterInfo.exists) {
 			return content
 		}
 
-		let endFenceIndex = -1
-		for (let index = 1; index < lines.length; index++) {
-			if (lines[index].trim() === '---') {
-				endFenceIndex = index
-				break
-			}
-		}
-
-		if (endFenceIndex === -1) {
-			return content
-		}
-
-		const frontmatterLines = lines.slice(1, endFenceIndex)
-		const bodyLines = lines.slice(endFenceIndex + 1)
+		const frontmatterLines = frontMatterInfo.frontmatter.split(/\r?\n/)
+		const bodyContent = content.substring(frontMatterInfo.contentStart)
 		const filteredFrontmatter = this.removeTrackedPropertyFromFrontmatterLines(frontmatterLines)
 
 		if (filteredFrontmatter.length === 0) {
-			return bodyLines.join('\n')
+			return bodyContent
 		}
 
-		return `---\n${filteredFrontmatter.join('\n')}\n---\n${bodyLines.join('\n')}`
+		return `---\n${filteredFrontmatter.join('\n')}\n---\n${bodyContent}`
 	}
 
 	private removeTrackedPropertyFromFrontmatterLines(lines: string[]): string[] {
 		const filtered: string[] = []
-		const keyPattern = /^([ \t]*)(?:['"]?last-modified['"]?)\s*:(.*)$/
+		const keyPattern = /^(?:['"]?last-modified['"]?):.*$/
 
 		for (let index = 0; index < lines.length; index++) {
 			const line = lines[index]
@@ -193,23 +182,19 @@ export default class LogKeeperPlugin extends Plugin {
 				continue
 			}
 
-			const baseIndent = keyMatch[1].length
-			const valuePart = keyMatch[2].trim()
-
-			if (valuePart.length === 0 || valuePart === '|' || valuePart === '>') {
-				while (index + 1 < lines.length) {
-					const nextLine = lines[index + 1]
-					const nextIndent = nextLine.match(/^[ \t]*/)?.[0].length ?? 0
-					if (nextLine.trim().length === 0) {
-						index++
-						continue
-					}
-					if (nextIndent > baseIndent) {
-						index++
-						continue
-					}
-					break
+			// Skip continuation lines (list items in Obsidian format)
+			while (index + 1 < lines.length) {
+				const nextLine = lines[index + 1]
+				if (nextLine.trim().length === 0) {
+					index++
+					continue
 				}
+				const nextIndent = nextLine.match(/[\x20]{2}-[\x20]{1}.*/)?.[0].length ?? 0
+				if (nextIndent > 0) {
+					index++
+					continue
+				}
+				break
 			}
 		}
 
@@ -243,7 +228,7 @@ export default class LogKeeperPlugin extends Plugin {
 			const isOneModificationPerDay = this.settings.oneModificationPerDay
 			const updateInterval = this.settings.updateInterval
 
-			const existingEntries = this.getNormalizedTimestampEntries(yamlProperty.value, isOneModificationPerDay)
+			const existingEntries = this.getNormalizedTimestampEntries(yamlProperty.value)
 			const previousMoment = this.getLatestMomentFromEntries(existingEntries)
 			const currentMoment = moment()
 			const newEntry = currentMoment.format(TIMESTAMP_FORMAT)
@@ -274,7 +259,7 @@ export default class LogKeeperPlugin extends Plugin {
 			}
 
 			if (shouldWrite) {
-				frontmatter[LAST_MODIFIED_PROPERTY] = this.getNormalizedTimestampEntries(nextEntries, isOneModificationPerDay)
+				frontmatter[LAST_MODIFIED_PROPERTY] = this.getNormalizedTimestampEntries(nextEntries)
 			}
 		})
 	}
@@ -306,7 +291,7 @@ export default class LogKeeperPlugin extends Plugin {
 	 * Return a sorted and normalized array of timestamps from frontmatter.
 	 * Invalid entries are ignored.
 	 */
-	private getNormalizedTimestampEntries(value: unknown, oneModificationPerDay: boolean): string[] {
+	private getNormalizedTimestampEntries(value: unknown): string[] {
 		const parsedMoments: Moment[] = []
 		const values = Array.isArray(value) ? value : [value]
 
@@ -321,31 +306,9 @@ export default class LogKeeperPlugin extends Plugin {
 			}
 		}
 
-		parsedMoments.sort((left, right) => left.valueOf() - right.valueOf())
-
-		if (oneModificationPerDay) {
-			const latestByDay = new Map<string, Moment>()
-
-			for (const timestamp of parsedMoments) {
-				latestByDay.set(timestamp.format('YYYY-MM-DD'), timestamp)
-			}
-
-			return [...latestByDay.values()]
-				.sort((left, right) => left.valueOf() - right.valueOf())
-				.map((timestamp) => timestamp.format(TIMESTAMP_FORMAT))
-		}
-
-		const unique = new Set<string>()
-		const ordered: string[] = []
-		for (const timestamp of parsedMoments) {
-			const formatted = timestamp.format(TIMESTAMP_FORMAT)
-			if (!unique.has(formatted)) {
-				unique.add(formatted)
-				ordered.push(formatted)
-			}
-		}
-
-		return ordered
+		return parsedMoments
+			.sort((left, right) => left.valueOf() - right.valueOf())
+			.map((timestamp) => timestamp.format(TIMESTAMP_FORMAT))
 	}
 
 	/**
