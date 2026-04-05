@@ -1,15 +1,21 @@
-import { Plugin, TFile, moment, FrontMatterCache, MarkdownView, getFrontMatterInfo } from 'obsidian'
+import { Plugin, TFile, Editor, moment, FrontMatterCache, MarkdownView, getFrontMatterInfo } from 'obsidian'
 import { LogKeeperTab, DEFAULT_SETTINGS, LogKeeperSettings } from './settings'
 import { Moment } from 'moment'
 
-type YAMLProperty = {
+interface YAMLProperty {
 	property: string | undefined,
 	value: unknown
 }
 
+interface FileState {
+	lastMeaningfulSignature?: string
+	pendingSignature?: string
+	timer?: ReturnType<typeof setTimeout>
+}
+
 const LAST_MODIFIED_PROPERTY = 'last-modified'
 const TIMESTAMP_FORMAT = 'YYYY-MM-DDTHH:mm:ss'
-const DEBOUNCE_UPDATE_MS = 10_000
+const DEBOUNCE_UPDATE_MS = 5_000
 
 /**
  * @author James Sonneveld
@@ -17,9 +23,7 @@ const DEBOUNCE_UPDATE_MS = 10_000
  */
 export default class LogKeeperPlugin extends Plugin {
 	settings: LogKeeperSettings
-	private pendingUpdateTimers: Map<string, ReturnType<typeof setTimeout>> = new Map()
-	private pendingUpdateSignatures: Map<string, string> = new Map()
-	private lastMeaningfulSignatures: Map<string, string> = new Map()
+	private fileStates: Map<string, FileState> = new Map()
 
 	async onload() {
 		await this.loadSettings()
@@ -34,38 +38,39 @@ export default class LogKeeperPlugin extends Plugin {
 			if (!(info instanceof MarkdownView) || !info.file) {
 				return
 			}
+			void this.handleEditorContentChange(info.file, editor)
+		}))
 
+		// editor-change does not reliably fire on paste. We listen to
+		// editor-paste separately to cover clipboard actions. The paste event
+		// fires *before* the pasted content is inserted into the editor, so we
+		// defer the signature check to the next tick via setTimeout.
+		this.registerEvent(this.app.workspace.on('editor-paste', (evt, editor, info) => {
+			if (evt.defaultPrevented) {
+				return
+			}
+			if (!(info instanceof MarkdownView) || !info.file) {
+				return
+			}
 			const file = info.file
-			if (this.fileWithinIgnoredFolders(file)) {
+			setTimeout(() => void this.handleEditorContentChange(file, editor), 0)
+		}))
+
+		this.registerEvent(this.app.workspace.on('file-open', (file) => {
+			if (!(file instanceof TFile) || file.extension !== 'md') {
 				return
 			}
-
-			const currentSignature = this.getContentSignature(editor.getValue())
-			const previousSignature = this.lastMeaningfulSignatures.get(file.path)
-
-			// Prime baseline for this file in-memory. This avoids an unnecessary write
-			// on first editor-change after app/plugin restart.
-			if (previousSignature === undefined) {
-				this.lastMeaningfulSignatures.set(file.path, currentSignature)
-				return
-			}
-
-			if (previousSignature === currentSignature) {
-				return
-			}
-
-			this.lastMeaningfulSignatures.set(file.path, currentSignature)
-			this.scheduleFrontmatterUpdate(file, currentSignature)
+			void this.ensurePersistedSignatureSeeded(file)
 		}))
 	}
 
 	onunload() {
-		for (const timer of this.pendingUpdateTimers.values()) {
-			clearTimeout(timer)
+		for (const state of this.fileStates.values()) {
+			if (state.timer) {
+				clearTimeout(state.timer)
+			}
 		}
-		this.pendingUpdateTimers.clear()
-		this.pendingUpdateSignatures.clear()
-		this.lastMeaningfulSignatures.clear()
+		this.fileStates.clear()
 	}
 
 	async loadSettings() {
@@ -76,51 +81,99 @@ export default class LogKeeperPlugin extends Plugin {
 		await this.saveData(this.settings)
 	}
 
-	private scheduleFrontmatterUpdate(file: TFile, scheduledSignature: string): void {
-		const filePath = file.path
-		const existingTimer = this.pendingUpdateTimers.get(filePath)
-		if (existingTimer) {
-			clearTimeout(existingTimer)
+	private getFileState(filePath: string): FileState {
+		let state = this.fileStates.get(filePath)
+		if (!state) {
+			state = {}
+			this.fileStates.set(filePath, state)
 		}
-
-		this.pendingUpdateSignatures.set(filePath, scheduledSignature)
-
-		const timer = setTimeout(() => {
-			this.pendingUpdateTimers.delete(filePath)
-			void this.flushScheduledFrontmatterUpdate(file, scheduledSignature)
-		}, DEBOUNCE_UPDATE_MS)
-
-		this.pendingUpdateTimers.set(filePath, timer)
+		return state
 	}
 
-	private async flushScheduledFrontmatterUpdate(file: TFile, scheduledSignature: string): Promise<void> {
-		const filePath = file.path
+	private async ensurePersistedSignatureSeeded(file: TFile): Promise<string | null> {
+		const state = this.getFileState(file.path)
+		if (state.lastMeaningfulSignature !== undefined) {
+			return state.lastMeaningfulSignature
+		}
 
+		try {
+			const signature = this.getContentSignature(await this.app.vault.cachedRead(file))
+			if (state.lastMeaningfulSignature === undefined) {
+				state.lastMeaningfulSignature = signature
+			}
+			return state.lastMeaningfulSignature ?? signature
+		}
+		catch {
+			return null
+		}
+	}
+
+	private async handleEditorContentChange(file: TFile, editor: Editor): Promise<void> {
 		if (this.fileWithinIgnoredFolders(file)) {
-			this.pendingUpdateSignatures.delete(filePath)
 			return
 		}
 
-		const latestScheduledSignature = this.pendingUpdateSignatures.get(filePath)
-		if (latestScheduledSignature !== scheduledSignature) {
+		const state = this.getFileState(file.path)
+		const currentSignature = this.getContentSignature(editor.getValue())
+		let previousSignature: string | null | undefined = state.lastMeaningfulSignature
+
+		if (previousSignature === undefined) {
+			previousSignature = await this.ensurePersistedSignatureSeeded(file)
+		}
+
+		if (previousSignature === currentSignature) {
+			state.lastMeaningfulSignature = currentSignature
+			return
+		}
+
+		state.lastMeaningfulSignature = currentSignature
+		this.scheduleFrontmatterUpdate(file, currentSignature)
+	}
+
+	private scheduleFrontmatterUpdate(file: TFile, scheduledSignature: string): void {
+		const state = this.getFileState(file.path)
+		if (state.timer) {
+			clearTimeout(state.timer)
+		}
+
+		state.pendingSignature = scheduledSignature
+
+		state.timer = setTimeout(() => {
+			state.timer = undefined
+			void this.flushScheduledFrontmatterUpdate(file, scheduledSignature)
+		}, DEBOUNCE_UPDATE_MS)
+	}
+
+	private async flushScheduledFrontmatterUpdate(file: TFile, scheduledSignature: string): Promise<void> {
+		const state = this.fileStates.get(file.path)
+		if (!state) {
+			return
+		}
+
+		if (this.fileWithinIgnoredFolders(file)) {
+			state.pendingSignature = undefined
+			return
+		}
+
+		if (state.pendingSignature !== scheduledSignature) {
 			// Stale timer.
 			return
 		}
 
-		const latestMeaningfulSignature = this.lastMeaningfulSignatures.get(filePath)
-		if (latestMeaningfulSignature !== scheduledSignature) {
+		if (state.lastMeaningfulSignature !== scheduledSignature) {
 			// Content changed again after this timer was scheduled.
 			return
 		}
 
 		const currentSignature = await this.getCurrentFileSignature(file)
 		if (currentSignature === null) {
+			state.pendingSignature = undefined
 			return
 		}
 
 		if (currentSignature !== scheduledSignature) {
 			// The latest editor content changed since scheduling (e.g. more typing).
-			this.lastMeaningfulSignatures.set(filePath, currentSignature)
+			state.lastMeaningfulSignature = currentSignature
 			this.scheduleFrontmatterUpdate(file, currentSignature)
 			return
 		}
@@ -129,13 +182,15 @@ export default class LogKeeperPlugin extends Plugin {
 
 		// Keep the signature as-is. A plugin self-write only touches the tracked
 		// frontmatter property, so normalized content signature should not change.
-		this.pendingUpdateSignatures.delete(filePath)
+		state.pendingSignature = undefined
 	}
 
 	private async getCurrentFileSignature(file: TFile): Promise<string | null> {
-		const activeView = this.app.workspace.getActiveViewOfType(MarkdownView)
-		if (activeView?.file?.path === file.path) {
-			return this.getContentSignature(activeView.editor.getValue())
+		for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+			const view = leaf.view
+			if (view instanceof MarkdownView && view.file?.path === file.path) {
+				return this.getContentSignature(view.editor.getValue())
+			}
 		}
 
 		try {
