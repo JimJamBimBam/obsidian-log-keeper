@@ -283,7 +283,7 @@ export default class LogKeeperPlugin extends Plugin {
 			const isOneModificationPerDay = this.settings.oneModificationPerDay
 			const updateInterval = this.settings.updateInterval
 
-			const existingEntries = this.getNormalizedTimestampEntries(yamlProperty.value, isOneModificationPerDay)
+			const existingEntries = this.getNormalizedTimestampEntries(yamlProperty.value)
 			const previousMoment = this.getLatestMomentFromEntries(existingEntries)
 			const currentMoment = moment()
 			const newEntry = currentMoment.format(TIMESTAMP_FORMAT)
@@ -314,7 +314,7 @@ export default class LogKeeperPlugin extends Plugin {
 			}
 
 			if (shouldWrite) {
-				frontmatter[LAST_MODIFIED_PROPERTY] = this.getNormalizedTimestampEntries(nextEntries, isOneModificationPerDay)
+				frontmatter[LAST_MODIFIED_PROPERTY] = this.getNormalizedTimestampEntries(nextEntries)
 			}
 		})
 	}
@@ -345,7 +345,7 @@ export default class LogKeeperPlugin extends Plugin {
 	 * Return a sorted and normalized array of timestamps from frontmatter.
 	 * Invalid entries are ignored.
 	 */
-	private getNormalizedTimestampEntries(value: unknown, oneModificationPerDay: boolean): string[] {
+	private getNormalizedTimestampEntries(value: unknown): string[] {
 		const parsedMoments: Moment[] = []
 		const values = Array.isArray(value) ? value : [value]
 
@@ -360,21 +360,8 @@ export default class LogKeeperPlugin extends Plugin {
 			}
 		}
 
-		parsedMoments.sort((left, right) => left.valueOf() - right.valueOf())
-
-		if (oneModificationPerDay) {
-			const latestByDay = new Map<string, Moment>()
-
-			for (const timestamp of parsedMoments) {
-				latestByDay.set(timestamp.format('YYYY-MM-DD'), timestamp)
-			}
-
-			return [...latestByDay.values()]
-				.sort((left, right) => left.valueOf() - right.valueOf())
-				.map((timestamp) => timestamp.format(TIMESTAMP_FORMAT))
-		}
-
 		return parsedMoments
+			.sort((left, right) => left.valueOf() - right.valueOf())
 			.map((timestamp) => timestamp.format(TIMESTAMP_FORMAT))
 	}
 
